@@ -1,0 +1,43 @@
+from tkinter import *
+def celsius_to_fahrenheit(celsius):
+    return (celsius * 9/5) + 32
+
+def fahrenheit_to_celsius(fahrenheit):
+    return (fahrenheit - 32) * 5/9
+def convert_temperature():
+    try:
+        value = float(entry.get())
+        if conversion_type.get() == "Celsius to Fahrenheit":
+            result.set(f"{value}°C is {celsius_to_fahrenheit(value):.2f}°F")
+        elif conversion_type.get() == "Fahrenheit to Celsius":
+            result.set(f"{value}°F is {fahrenheit_to_celsius(value):.2f}°C")
+    except ValueError:
+        result.set("Invalid input")
+
+
+window= Tk()
+window.resizable(False,False)
+window.geometry('550x600')
+window.title("Temperature Converter")
+
+window.config(background="light blue")
+# creating a label ,is a area to hold text or an image
+label=Label(window,text="Temperature Converter",font=('comic sans',30),background='light blue')
+label.pack(pady=20)
+# create a variable to hold the the converssion type
+conversion_type= StringVar()
+conversion_type.set("select the temperature")
+
+option_menu=OptionMenu(window,conversion_type,"Celsius to Fahrenheit","Fahrenheit to Celsius")
+option_menu.config(font=('cosmic',30))
+option_menu.pack(pady=20)
+entry=Entry(window,font=("arial",30),fg='white',background="black")
+entry.pack(pady=20)
+button=Button(window,text='submit',font =('arial',20),command=convert_temperature)
+button.pack(pady=20)
+result=StringVar()
+result_label=Label(window,textvariable=result,font=('cosmic sans',19))
+result_label.pack(pady=20)
+
+
+window.mainloop()
