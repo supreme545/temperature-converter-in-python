@@ -1,0 +1,204 @@
+import os
+from dotenv import load_dotenv
+import google.generativeai as genai
+import speech_recognition as sr
+import pyttsx3
+import requests
+import geocoder
+import re
+import tkinter as tk
+from tkinter import ttk
+
+class RIC_GUI:
+    def __init__(self, master):
+        self.master = master
+        self.master.title("RIC")
+        self.master.resizable(False, False)
+        self.master.geometry('550x600')
+        self.master.config(background="light blue")
+        self.master.attributes("-alpha", 0.9)  # Make window transparent
+        
+        self.load_api_keys()
+        
+        genai.configure(api_key=self.GEMINI_API_KEY)
+        self.model = genai.GenerativeModel('gemini-pro')
+        self.chat = self.model.start_chat(history=[])
+        
+        self.r = sr.Recognizer()
+        self.engine = pyttsx3.init()
+        
+        self.create_widgets()
+        self.style_widgets()  # Apply button styling
+        
+    def load_api_keys(self):
+        load_dotenv()
+        self.GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+        self.OPENWEATHER_API_KEY = os.getenv('OPENWEATHER_API_KEY')
+        
+    def create_widgets(self):
+        self.output_text = tk.Text(self.master, wrap=tk.WORD, width=60, height=15, font=('comic sans', 12), fg='black')
+        self.output_text.config(borderwidth=2, relief="solid", highlightbackground="light blue")
+
+        self.output_text.pack(pady=10)
+        
+        self.input_text = tk.Text(self.master, wrap=tk.WORD, width=60, height=3, font=("arial", 12))
+        self.input_text.config(borderwidth=2, relief="solid", highlightbackground="light blue")
+        self.input_text.pack(pady=20)
+        
+        self.submit_button = ttk.Button(self.master, text="Submit", command=self.process_input, style='Glass.TButton')
+        self.submit_button.pack(pady=20)
+        
+        self.microphone_button = ttk.Button(self.master, text="Microphone", command=self.record_from_microphone, style='Glass.TButton')
+        self.microphone_button.pack(pady=20)
+        
+    def style_widgets(self):
+        style = ttk.Style()
+        style.theme_use('default')
+        
+        style.configure('Glass.TButton',
+                        font=('Helvetica', 15),
+                        foreground='black',
+                        background='#f0f0f0',  # Light grey to give a glass effect
+                        borderwidth=1,
+                        focusthickness=3,
+                        focuscolor='none',
+                        padding=10,
+                        relief="raised")
+        
+        style.map('Glass.TButton',
+                  background=[('active', 'white'), ('disabled', 'white')],
+                  relief=[('pressed', 'sunken'), ('!pressed', 'flat')],
+                  foreground=[('disabled', '#a3a3a3')])
+    
+    def process_input(self):
+        user_input = self.input_text.get("1.0", "end-1c").strip()
+        self.handle_input(user_input)
+        
+    def record_from_microphone(self):
+        self.microphone_button.config(state=tk.DISABLED)
+        with sr.Microphone() as source:
+            self.r.adjust_for_ambient_noise(source)
+            print("Listening...")
+            audio = self.r.listen(source)
+            print("Processing...")
+            
+            try:
+                user_input = self.r.recognize_google(audio)
+                self.handle_input(user_input)
+            except sr.UnknownValueError:
+                print("Sorry, I didn't catch that. Can you repeat?")
+                self.speak_text("I am unable to understand, please repeat.")
+            except sr.RequestError as e:
+                print(f"Could not request results; {e}")
+                
+        self.microphone_button.config(state=tk.NORMAL)
+        
+    def handle_input(self, user_input):
+        identity_pattern = re.compile(r"(who.*created.*you|"
+                                      r"what.*your.*name|"
+                                      r"who.*are.*you|"
+                                      r"introduce.*yourself|"
+                                      r"identity|"
+                                      r"who.*made.*you|"
+                                      r"creator|"
+                                      r"what.*are.*you|"
+                                      r"who.*developed.*you|"
+                                      r"who.*designed.*you|"
+                                      r"who.*programmed.*you|"
+                                      r"who.*built.*you|"
+                                      r"your.*creator|"
+                                      r"about.*you|"
+                                      r"who.*is.*your.*creator|"
+                                      r"what.*do.*you.*do|"
+                                      r"what.*are.*you.*doing|"
+                                      r"who.*gave.*birth.*to.*you|"
+                                      r"what.*is.*your.*purpose|"
+                                      r"who.*engineered.*you|"
+                                      r"who.*formed.*you|"
+                                      r"who.*made.*this|"
+                                      r"who.*invented.*you|"
+                                      r"tell.*me.*about.*yourself|"
+                                      r"describe.*yourself|"
+                                      r"what.*is.*your.*name)", re.IGNORECASE)
+        
+        if "exit" in user_input.lower():
+            self.output_text.insert(tk.END, "USER: exit\n")
+            self.output_text.insert(tk.END, "Exiting the program as per user's request.\n")
+            self.speak_text("Exiting the program as per user's request.")
+            self.master.quit()
+        elif "weather" in user_input.lower():
+            latitude, longitude = self.get_system_location()
+            if latitude is not None and longitude is not None:
+                bot_response = self.get_weather(latitude, longitude)
+            else:
+                bot_response = "Unable to determine your location. Please check your internet connection and try again."
+        elif "temperature" in user_input.lower():
+            latitude, longitude = self.get_system_location()
+            if latitude is not None and longitude is not None:
+                bot_response = self.get_current_temperature(latitude, longitude)
+            else:
+                bot_response = "Unable to determine your location. Please check your internet connection and try again."
+        elif identity_pattern.search(user_input):
+            bot_response = "I am RIC, created by Anurag Yadav"
+        else:
+            response = self.chat.send_message(user_input)
+            bot_response = response.text
+        
+        self.output_text.insert(tk.END, f"USER: {user_input}\n")
+        self.output_text.insert(tk.END, f"BOT: {bot_response}\n")
+        self.output_text.see(tk.END)
+        
+        self.speak_text(bot_response)
+        self.input_text.delete("1.0", tk.END)
+        
+    def speak_text(self, text):
+        clean_text = self.clean_text(text)
+        self.engine.say(clean_text)
+        self.engine.runAndWait()
+        
+    def clean_text(self, text):
+        clean_text = re.sub(r'[\*,]', '', text)  
+        clean_text = re.sub(r'\b(USER|BOT)\b', '', clean_text)  
+        return clean_text.strip()
+        
+    def get_weather(self, latitude, longitude):
+        try:
+            url = f"http://api.openweathermap.org/data/2.5/weather?lat={latitude}&lon={longitude}&appid={self.OPENWEATHER_API_KEY}&units=metric"
+            response = requests.get(url)
+            data = response.json()
+            if response.status_code == 200:
+                weather_desc = data['weather'][0]['description']
+                temp = data['main']['temp']
+                return f"The weather here is {weather_desc} with a temperature of {temp}°C."
+            else:
+                return f"Failed to get weather data. Error code: {response.status_code}, Message: {data.get('message', 'No message')}"
+        except Exception as e:
+            return "I do not have access to real-time information and cannot provide the current temperature."
+        
+    def get_current_temperature(self, latitude, longitude):
+        try:
+            url = f"http://api.openweathermap.org/data/2.5/weather?lat={latitude}&lon={longitude}&appid={self.OPENWEATHER_API_KEY}&units=metric"
+            response = requests.get(url)
+            data = response.json()
+            if response.status_code == 200:
+                temp = data['main']['temp']
+                return f"The current temperature here is {temp}°C."
+            else:
+                return f"Failed to get temperature data. Error code: {response.status_code}, Message: {data.get('message', 'No message')}"
+        except Exception as e:
+            return "I do not have access to real-time information and cannot provide the current temperature."
+        
+    def get_system_location(self):
+        g = geocoder.ip('me')
+        if g.latlng:
+            return g.latlng[0], g.latlng[1]
+        else:
+            return None, None
+    
+def main():
+    root = tk.Tk()
+    app = RIC_GUI(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()
